@@ -6,11 +6,9 @@ on:
       url: https://downloads.sourceforge.net/project/crdroid/guacamole/11.x/crDroidAndroid-15.0-20250824-guacamole-v11.8.zip?ts=gAAAAABosAwx_CYRXVwFYsbuFdTPgwGUebInKzjCNokkUPOFKioldx8pgeoq-TASI9q2EK4mnpk-QPxC6cT4KOZbagfWt4ymJA%3D%3D&use_mirror=cyfuture&r=https%3A%2F%2Fsourceforge.net%2Fprojects%2Fcrdroid%2Ffiles%2Fguacamole%2F11.x%2F
         description: "Direct download URL"
         required: true
-        type: string
       filename: crDroid.zip
         description: "Save as filename (e.g. file.zip)"
         required: true
-        type: string
 
 jobs:
   mirror:
@@ -18,14 +16,14 @@ jobs:
     steps:
       - name: Download file
         run: |
-          echo "Downloading: ${{ inputs.url }}"
-          wget -O "${{ inputs.filename }}" "${{ inputs.url }}"
+          echo "Downloading: ${{ github.event.inputs.url }}"
+          wget -O "${{ github.event.inputs.filename }}" "${{ github.event.inputs.url }}"
 
       - name: Upload to Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: "mirror-${{ github.run_id }}"
           name: "Mirrored File ${{ github.run_id }}"
-          files: ${{ inputs.filename }}
+          files: ${{ github.event.inputs.filename }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
