@@ -3,12 +3,14 @@ name: Universal Link Mirror
 on:
   workflow_dispatch:
     inputs:
-      url: https://downloads.sourceforge.net/project/crdroid/guacamole/11.x/crDroidAndroid-15.0-20250824-guacamole-v11.8.zip?ts=gAAAAABosA2V_uD7TRAZPJU8MHu11GNrq7ZDiMkJgZ2JxE9BUrENA35qgKUaqSk-X6ladt-OfKZeLpaQaFMKN4J3bPIh_gUcdw%3D%3D&use_mirror=cyfuture&r=
+      url: https://downloads.sourceforge.net/project/crdroid/guacamole/11.x/crDroidAndroid-15.0-20250824-guacamole-v11.8.zip?ts=gAAAAABosA7qZhkHx8JHaTJfj_46CR-SYuVhHML7mUC3aW2AB9G3xY57lDfTnl2bL2a5ukLMJXgmY_oZikdtVHIWhkKNAc-TYg%3D%3D&use_mirror=cyfuture&r=
         description: "Direct download URL"
         required: true
-      filename: crDroid.zip
+        default: ""
+      filename: crdroid.zip
         description: "Save as filename (e.g. file.zip)"
         required: true
+        default: "file.zip"
 
 jobs:
   mirror:
@@ -22,8 +24,8 @@ jobs:
       - name: Upload to Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: "mirror-${{ github.run_id }}"
-          name: "Mirrored File ${{ github.run_id }}"
+          tag_name: mirror-${{ github.run_id }}
+          name: Mirrored File ${{ github.run_id }}
           files: ${{ github.event.inputs.filename }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
