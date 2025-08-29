@@ -1,8 +1,8 @@
-name: Mirror crDroid
+name: Link Mirror
 
 permissions:
   contents: write
-  
+
 on:
   workflow_dispatch:
 
@@ -10,15 +10,32 @@ jobs:
   mirror:
     runs-on: ubuntu-latest
     steps:
-      - name: Download file
-        run: |
-          wget -O crDroid.zip "https://downloads.sourceforge.net/project/crdroid/guacamole/11.x/crDroidAndroid-15.0-20250824-guacamole-v11.8.zip?ts=gAAAAABosBJexd5kczoD0ZP7SuzxXy9-Utd5mKMkQoy5FPXg9juf8amLjSN8sGndZ0L0TgBEydtlUCm5h5SNwoGAIbHQG_VdVg%3D%3D&use_mirror=cyfuture&r="
+      - name: Checkout repo
+        uses: actions/checkout@v3
 
-      - name: Upload to Release
+      - name: Install wget
+        run: sudo apt-get update && sudo apt-get install -y wget
+
+      - name: Download all links from links.txt with auto filenames
+        run: |
+          mkdir -p downloads
+          while IFS= read -r url; do
+            # Extract the base filename from URL and remove query parameters
+            filename=$(basename "${url%%\?*}")
+            # Replace any invalid characters with underscore
+            safe_filename=$(echo "$filename" | sed 's/[^a-zA-Z0-9._-]/_/g')
+            echo "Downloading $url as $safe_filename"
+
+            # Use wget with resume, retries, and quiet progress
+            wget --tries=5 --continue --retry-connrefused \
+                 -O "downloads/$safe_filename" "$url"
+          done < links.txt
+
+      - name: Upload all files to Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: mirror-${{ github.run_id }}
-          name: Mirrored File ${{ github.run_id }}
-          files: crDroid.zip
+          name: Mirrored Files ${{ github.run_id }}
+          files: downloads/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
