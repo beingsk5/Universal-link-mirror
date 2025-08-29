@@ -1,8 +1,8 @@
-name: Mirror File to Release
+name: Universal Link Mirror
 
 permissions:
-  contents: write   
-
+  contents: write
+  
 on:
   workflow_dispatch:
 
@@ -10,15 +10,29 @@ jobs:
   mirror:
     runs-on: ubuntu-latest
     steps:
-      - name: Download file with aria2 (resume/retry)
-        run: |
-          aria2c -x 16 -s 16 -c "YOUR_FILE_LINK" -o crDroid.zip
+      - name: Checkout repo
+        uses: actions/checkout@v3
 
-      - name: Upload to GitHub Release
+      - name: Install aria2 for fast download
+        run: sudo apt-get update && sudo apt-get install -y aria2
+
+      - name: Download all links from links.txt with auto filenames
+        run: |
+          mkdir -p downloads
+          while IFS= read -r url; do
+            # Extract the base filename from URL and remove query parameters
+            filename=$(basename "${url%%\?*}")
+            # Replace any invalid characters with underscore
+            safe_filename=$(echo "$filename" | sed 's/[^a-zA-Z0-9._-]/_/g')
+            echo "Downloading $url as $safe_filename"
+            aria2c --continue=true --max-tries=5 -x16 -s16 -k1M -d downloads -o "$safe_filename" "$url"
+          done < links.txt
+
+      - name: Upload all files to Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: mirror-${{ github.run_id }}
-          name: "Mirror Release ${{ github.run_id }}"
-          files: crDroid.zip
+          name: Mirrored Files ${{ github.run_id }}
+          files: downloads/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
