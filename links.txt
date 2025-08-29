@@ -1,1 +1,1 @@
-https://downloads.sourceforge.net/project/crdroid/guacamole/11.x/crDroidAndroid-15.0-20250824-guacamole-v11.8.zip?ts=gAAAAABosBaL3Te84SkxeIrxPgb-aotSt2UBcG2EHphm2WRtY5m1-FdSdaJqMDKes4pbHfe2CXYnngRq9rrZTr0KI1HmX9Ulxw%3D%3D&use_mirror=cyfuture&r=
+https://downloads.sourceforge.net/project/crdroid/guacamole/12.x/crDroidAndroid-16.0-20250829-guacamole-v12.0-BETA.zip?ts=gAAAAABosRn3_vVBz_EmCGPxWTzppACW6FqOPSZnKXPYt5dvSfIZ7icjlPxwQfiUwo8ndVy0Fvh2pXvBHs3x9cs0hoGK1Q091A%3D%3D&use_mirror=cyfuture&r=https%3A%2F%2Fsourceforge.net%2Fprojects%2Fcrdroid%2Ffiles%2Fguacamole%2F12.x%2F
