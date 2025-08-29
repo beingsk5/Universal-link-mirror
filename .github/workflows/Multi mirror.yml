@@ -2,7 +2,7 @@ name: Universal Link Mirror
 
 permissions:
   contents: write
-  
+
 on:
   workflow_dispatch:
 
@@ -20,12 +20,15 @@ jobs:
         run: |
           mkdir -p downloads
           while IFS= read -r url; do
-            # Extract the base filename from URL and remove query parameters
             filename=$(basename "${url%%\?*}")
-            # Replace any invalid characters with underscore
             safe_filename=$(echo "$filename" | sed 's/[^a-zA-Z0-9._-]/_/g')
             echo "Downloading $url as $safe_filename"
-            aria2c --continue=true --max-tries=5 -x16 -s16 -k1M -d downloads -o "$safe_filename" "$url"
+
+            # Try multi-connection first
+            if ! aria2c --continue=true --max-tries=3 -x16 -s16 -k1M -d downloads -o "$safe_filename" "$url"; then
+              echo "Multi-connection failed for $url, retrying with single connection..."
+              aria2c --continue=true --max-tries=5 -x1 -s1 -d downloads -o "$safe_filename" "$url"
+            fi
           done < links.txt
 
       - name: Upload all files to Release
