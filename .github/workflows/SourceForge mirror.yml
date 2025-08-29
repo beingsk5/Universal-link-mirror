@@ -1,4 +1,4 @@
-name: Link Mirror
+name: SourceForge Link Mirror
 
 permissions:
   contents: write
@@ -16,19 +16,17 @@ jobs:
       - name: Install wget
         run: sudo apt-get update && sudo apt-get install -y wget
 
-      - name: Download all links from links.txt with auto filenames
+      - name: Download all links from links.txt to SF folder
         run: |
-          mkdir -p downloads
+          mkdir -p SF
           while IFS= read -r url; do
-            # Extract the base filename from URL and remove query parameters
+            # Extract base filename without query parameters
             filename=$(basename "${url%%\?*}")
-            # Replace any invalid characters with underscore
+            # Replace invalid characters
             safe_filename=$(echo "$filename" | sed 's/[^a-zA-Z0-9._-]/_/g')
             echo "Downloading $url as $safe_filename"
-
-            # Use wget with resume, retries, and quiet progress
-            wget --tries=5 --continue --retry-connrefused \
-                 -O "downloads/$safe_filename" "$url"
+            # Use wget without splitting, no resume
+            wget -q --show-progress -O "SF/$safe_filename" "$url"
           done < links.txt
 
       - name: Upload all files to Release
@@ -36,6 +34,6 @@ jobs:
         with:
           tag_name: mirror-${{ github.run_id }}
           name: Mirrored Files ${{ github.run_id }}
-          files: downloads/*
+          files: SF/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
