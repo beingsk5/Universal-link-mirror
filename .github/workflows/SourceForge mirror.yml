@@ -63,6 +63,8 @@ jobs:
           prerelease: false
 
       - name: Upload each downloaded file to Release via GitHub CLI
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           for f in SF/*; do
             echo "Uploading $f via gh CLI"
