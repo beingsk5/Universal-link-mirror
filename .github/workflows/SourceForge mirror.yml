@@ -51,11 +51,6 @@ jobs:
             esac
           done
 
-      - name: Authenticate gh CLI
-        run: gh auth login --with-token
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Create GitHub Release
         id: create_release
         uses: actions/create-release@v1
