@@ -13,7 +13,7 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v3
 
-      - name: Clean SF folder and create anew
+      - name: Clean SF folder and create a new
         run: |
           rm -rf SF
           mkdir SF
@@ -61,6 +61,8 @@ jobs:
           gh release create mirror-${{ github.run_id }} SF/* --title "Mirrored Files ${{ github.run_id }}" --notes "Automated mirror upload" --draft=false --prerelease=false
 
       - name: Download release assets for verification
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir SF-verify
           gh release download mirror-${{ github.run_id }} -D SF-verify
