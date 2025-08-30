@@ -13,7 +13,7 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v3
 
-      - name: Clean SF folder and create a new
+      - name: Clean SF folder and create anew
         run: |
           rm -rf SF
           mkdir SF
@@ -51,8 +51,9 @@ jobs:
             esac
           done
 
-      - name: Generate checksums of downloaded files
-        run: sha256sum SF/* > SF/checksums.txt
+      - name: Generate checksums of downloaded files excluding checksum file itself
+        run: |
+          sha256sum $(find SF -type f ! -name 'checksums.txt') > SF/checksums.txt
 
       - name: Create GitHub Release via CLI
         env:
@@ -67,8 +68,9 @@ jobs:
           mkdir SF-verify
           gh release download mirror-${{ github.run_id }} -D SF-verify
 
-      - name: Generate checksums of downloaded release assets
-        run: sha256sum SF-verify/* > SF-verify/checksums_downloaded.txt
+      - name: Generate checksums of downloaded release assets excluding checksum file itself
+        run: |
+          sha256sum $(find SF-verify -type f ! -name 'checksums_downloaded.txt') > SF-verify/checksums_downloaded.txt
 
       - name: Compare checksums to verify upload integrity
         run: |
