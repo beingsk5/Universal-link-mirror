@@ -51,22 +51,23 @@ jobs:
             esac
           done
 
-      - name: Create GitHub Release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: mirror-${{ github.run_id }}
-          release_name: Mirrored Files ${{ github.run_id }}
-          draft: false
-          prerelease: false
+      - name: Generate checksums of downloaded files
+        run: sha256sum SF/* > SF/checksums.txt
 
-      - name: Upload each downloaded file to Release via GitHub CLI
+      - name: Create GitHub Release via CLI
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          for f in SF/*; do
-            echo "Uploading $f via gh CLI"
-            gh release upload mirror-${{ github.run_id }} "$f" --clobber
-          done
+          gh release create mirror-${{ github.run_id }} SF/* --title "Mirrored Files ${{ github.run_id }}" --notes "Automated mirror upload" --draft=false --prerelease=false
+
+      - name: Download release assets for verification
+        run: |
+          mkdir SF-verify
+          gh release download mirror-${{ github.run_id }} -D SF-verify
+
+      - name: Generate checksums of downloaded release assets
+        run: sha256sum SF-verify/* > SF-verify/checksums_downloaded.txt
+
+      - name: Compare checksums to verify upload integrity
+        run: |
+          diff SF/checksums.txt SF-verify/checksums_downloaded.txt
