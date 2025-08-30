@@ -13,27 +13,63 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v3
 
-      - name: Install wget
-        run: sudo apt-get update && sudo apt-get install -y wget
+      - name: Clean SF folder and create anew
+        run: |
+          rm -rf SF
+          mkdir SF
+
+      - name: Install dependencies (wget, gh, unzip, tar)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget unzip tar
+          # Install GitHub CLI if not installed
+          if ! command -v gh &>/dev/null; then
+            type -p curl >/dev/null || sudo apt-get install -y curl
+            curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+            sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
+            echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+            sudo apt-get update
+            sudo apt-get install -y gh
+          fi
 
       - name: Download all links from links.txt to SF folder
         run: |
-          mkdir -p SF
           while IFS= read -r url; do
-            # Extract base filename without query parameters
             filename=$(basename "${url%%\?*}")
-            # Replace invalid characters
             safe_filename=$(echo "$filename" | sed 's/[^a-zA-Z0-9._-]/_/g')
             echo "Downloading $url as $safe_filename"
-            # Use wget without splitting, no resume
-            wget -q --show-progress -O "SF/$safe_filename" "$url"
+            wget --no-verbose --show-progress -O "SF/$safe_filename" "$url"
           done < links.txt
 
-      - name: Upload all files to Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: mirror-${{ github.run_id }}
-          name: Mirrored Files ${{ github.run_id }}
-          files: SF/*
+      - name: File format validation
+        run: |
+          for f in SF/*; do
+            case "${f##*.}" in
+              zip) unzip -t "$f" ;;
+              tar) tar -tf "$f" ;;
+              *) echo "No validation needed for $f" ;;
+            esac
+          done
+
+      - name: Authenticate gh CLI
+        run: gh auth login --with-token
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create GitHub Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: mirror-${{ github.run_id }}
+          release_name: Mirrored Files ${{ github.run_id }}
+          draft: false
+          prerelease: false
+
+      - name: Upload each downloaded file to Release via GitHub CLI
+        run: |
+          for f in SF/*; do
+            echo "Uploading $f via gh CLI"
+            gh release upload mirror-${{ github.run_id }} "$f" --clobber
+          done
