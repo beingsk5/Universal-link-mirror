@@ -1,38 +1,40 @@
-name: Universal Link Mirror
+name: IDM-like Download & Upload to Release
 
 permissions:
   contents: write
   
 on:
-  workflow_dispatch:
+  release:
+    types: [published]
 
 jobs:
-  mirror:
+  download-and-upload:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v3
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Install aria2 for fast download
-        run: sudo apt-get update && sudo apt-get install -y aria2
+      - name: Prepare downloads directory
+        run: mkdir -p downloads
 
-      - name: Download all links from links.txt with auto filenames
+      - name: Download files from links.txt with resume support
         run: |
-          mkdir -p downloads
-          while IFS= read -r url; do
-            # Extract the base filename from URL and remove query parameters
-            filename=$(basename "${url%%\?*}")
-            # Replace any invalid characters with underscore
-            safe_filename=$(echo "$filename" | sed 's/[^a-zA-Z0-9._-]/_/g')
-            echo "Downloading $url as $safe_filename"
-            aria2c --continue=true --max-tries=5 -x16 -s16 -k1M -d downloads -o "$safe_filename" "$url"
+          while read -r url; do
+            echo "Downloading $url"
+            filename=$(basename "$url")
+            # Use wget with resume (-c) functionality and retry attempts, save in downloads/
+            wget -c --tries=10 --retry-connrefused --waitretry=5 -P downloads "$url"
           done < links.txt
 
-      - name: Upload all files to Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: mirror-${{ github.run_id }}
-          name: Mirrored Files ${{ github.run_id }}
-          files: downloads/*
+      - name: Upload downloaded files to release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Upload all downloaded files to the current release by tag name
+          files=$(ls downloads)
+          for file in $files; do
+            echo "Uploading $file to release $GITHUB_REF_NAME"
+            gh release upload "$GITHUB_REF_NAME" "downloads/$file"
+          done
+          
