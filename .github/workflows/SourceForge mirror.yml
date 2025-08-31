@@ -51,9 +51,10 @@ jobs:
             esac
           done
 
-      - name: Generate checksums of downloaded files excluding checksum file itself
+      - name: Generate checksums of downloaded files (no path prefixes)
         run: |
-          sha256sum $(find SF -type f ! -name 'checksums.txt') > SF/checksums.txt
+          cd SF
+          sha256sum * > ../SF/checks.txt
 
       - name: Create GitHub Release via CLI
         env:
@@ -68,10 +69,11 @@ jobs:
           mkdir SF-verify
           gh release download mirror-${{ github.run_id }} -D SF-verify
 
-      - name: Generate checksums of downloaded release assets excluding checksum file itself
+      - name: Generate checksums of downloaded release assets (no path prefixes)
         run: |
-          sha256sum $(find SF-verify -type f ! -name 'checksums_downloaded.txt') > SF-verify/checksums_downloaded.txt
+          cd SF-verify
+          sha256sum * > ../SF-verify/checks_downloaded.txt
 
       - name: Compare checksums to verify upload integrity
         run: |
-          diff SF/checksums.txt SF-verify/checksums_downloaded.txt
+          diff SF/checks.txt SF-verify/checks_downloaded.txt
