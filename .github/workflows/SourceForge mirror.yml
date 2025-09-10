@@ -18,10 +18,10 @@ jobs:
           rm -rf SF
           mkdir SF
 
-      - name: Install dependencies (wget, gh, unzip, tar)
+      - name: Install dependencies (axel, gh, unzip, tar)
         run: |
           sudo apt-get update
-          sudo apt-get install -y wget unzip tar
+          sudo apt-get install -y axel unzip tar
           # Install GitHub CLI if not installed
           if ! command -v gh &>/dev/null; then
             type -p curl >/dev/null || sudo apt-get install -y curl
@@ -32,13 +32,13 @@ jobs:
             sudo apt-get install -y gh
           fi
 
-      - name: Download all links from links.txt to SF folder
+      - name: Download all links from links.txt to SF folder using axel
         run: |
           while IFS= read -r url; do
             filename=$(basename "${url%%\?*}")
             safe_filename=$(echo "$filename" | sed 's/[^a-zA-Z0-9._-]/_/g')
             echo "Downloading $url as $safe_filename"
-            wget --no-verbose --show-progress -O "SF/$safe_filename" "$url"
+            axel -n 8 -o "SF/$safe_filename" "$url"
           done < links.txt
 
       - name: File format validation
