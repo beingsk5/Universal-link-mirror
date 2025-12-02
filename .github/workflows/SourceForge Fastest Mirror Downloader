@@ -1,0 +1,161 @@
+name: SourceForge Fastest Mirror Downloader & Auto Release
+
+on:
+  workflow_dispatch:
+
+jobs:
+  download:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Install Tools
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y aria2 unzip p7zip-full
+
+    - name: Generate Auto Tag (sf-YYYY-MM-DD)
+      id: autotag
+      run: |
+        TAG="sf-$(date +'%Y-%m-%d')"
+        echo "TAG=$TAG" >> $GITHUB_OUTPUT
+        echo "Auto tag: $TAG"
+
+    - name: Load links
+      id: links
+      run: |
+        echo "LIST<<EOF" >> $GITHUB_OUTPUT
+        cat links.txt >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+
+    - name: Determine Fastest Mirror + Speed Report
+      id: fastest
+      run: |
+        echo "Testing mirror speeds..."
+
+        MIRRORS=("netix.dl.sourceforge.net" "gigenet.dl.sourceforge.net")
+        BEST=""
+        BEST_PING=9999
+
+        echo "Mirror Speed Test Report" > mirror_report.txt
+        echo "Timestamp: $(date)" >> mirror_report.txt
+        echo "" >> mirror_report.txt
+
+        for M in "${MIRRORS[@]}"; do
+          echo "Testing: $M" | tee -a mirror_report.txt
+
+          PING=$(ping -c 3 $M | tail -1 | awk '{print $4}' | cut -d '/' -f 2)
+
+          echo "Ping: $PING ms" | tee -a mirror_report.txt
+
+          # Download speed test using 1 MB test file
+          TEST_URL="https://$M/project/nothing/speedtest.bin"
+          SPEED=$(curl -m 5 -w "%{speed_download}" -o /dev/null -s "$TEST_URL")
+
+          echo "Speed: $SPEED bytes/sec" | tee -a mirror_report.txt
+          echo "" >> mirror_report.txt
+
+          if [ ! -z "$PING" ] && (( $(echo "$PING < $BEST_PING" | bc -l) )); then
+            BEST=$M
+            BEST_PING=$PING
+          fi
+        done
+
+        echo "Fastest Mirror: $BEST ($BEST_PING ms)" | tee -a mirror_report.txt
+
+        echo "FAST=$BEST" >> $GITHUB_OUTPUT
+
+    - name: Download Files using Fastest Mirror
+      run: |
+        mkdir -p downloads
+        cd downloads
+
+        FAST="${{ steps.fastest.outputs.FAST }}"
+
+        if [ -z "$FAST" ]; then
+          echo "❌ All mirrors failed → fallback"
+          FAST="downloads.sourceforge.net"
+        fi
+
+        echo "Using fastest mirror: $FAST"
+
+        while read -r url; do
+          [ -z "$url" ] && continue
+
+          FILE=$(basename "$url" | sed 's/\?.*//')
+          echo "Processing: $FILE"
+
+          MIRROR_URL=$(echo "$url" | sed "s#https://sourceforge.net/projects/#https://$FAST/project/#")
+
+          for TRY in {1..5}; do
+            echo "Attempt $TRY"
+
+            rm -f "$FILE"
+            aria2c -x 16 -s 16 -m 5 --max-tries=5 --allow-overwrite=true "$MIRROR_URL" -o "$FILE" && OK="1" || OK="0"
+
+            if [ "$OK" = "0" ]; then
+              echo "Retrying..."
+              continue
+            fi
+
+            if [ ! -s "$FILE" ]; then
+              echo "❌ Empty file → retry"
+              rm -f "$FILE"
+              continue
+            fi
+
+            # Integrity checks
+            case "$FILE" in
+              *.zip|*.apk)
+                unzip -t "$FILE" >/dev/null 2>&1 && GOOD="1" || GOOD="0"
+                if [ "$GOOD" = "0" ]; then
+                  rm -f "$FILE"
+                  continue
+                fi
+                ;;
+              *.7z)
+                7z t "$FILE" >/dev/null 2>&1 && GOOD="1" || GOOD="0"
+                if [ "$GOOD" = "0" ]; then
+                  rm -f "$FILE"
+                  continue
+                fi
+                ;;
+            esac
+
+            echo "✔ Valid: $FILE"
+            break
+          done
+
+          if [ ! -s "$FILE" ]; then
+            echo "❌ FAILED: $FILE"
+            exit 1
+          fi
+
+        done <<< "${{ steps.links.outputs.LIST }}"
+
+    - name: Generate SHA256SUMS
+      run: |
+        cd downloads
+        sha256sum * > SHA256SUMS.txt
+
+    - name: Prepare Release Files
+      run: |
+        mkdir release_files
+        cp downloads/* release_files/
+        cp mirror_report.txt release_files/
+
+    - name: Upload to GitHub Release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ steps.autotag.outputs.TAG }}
+        name: ${{ steps.autotag.outputs.TAG }}
+        body: |
+          **Automatic SourceForge Download**
+          - Auto-selected fastest mirror
+          - Automatic integrity validation
+          - Timestamp: $(date)
+        files: release_files/*
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
