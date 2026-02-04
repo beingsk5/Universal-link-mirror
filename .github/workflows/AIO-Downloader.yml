@@ -58,7 +58,6 @@ jobs:
 
     # -------------------------------
     # SourceForge mirror test
-    # (only if SF links exist)
     # -------------------------------
     - name: Determine Fastest SourceForge Mirror
       id: fastest
@@ -122,8 +121,16 @@ jobs:
 
           # rewrite only if this link is sourceforge
           if echo "$url" | grep -qi "sourceforge.net"; then
-            FINAL_URL=$(echo "$url" | sed "s#https://sourceforge.net/projects/#https://$FAST/project/#")
+
+            # case 1: https://sourceforge.net/projects/....
+            FINAL_URL=$(echo "$url" | sed -E "s#https?://sourceforge\.net/projects/#https://$FAST/project/#")
+
+            # case 2: https://<mirror>.dl.sourceforge.net/project/....
+            FINAL_URL=$(echo "$FINAL_URL" | sed -E "s#https?://[^/]+\.dl\.sourceforge\.net/project/#https://$FAST/project/#")
+
           fi
+
+          echo "Final URL: $FINAL_URL"
 
           for TRY in {1..5}; do
             echo "Attempt $TRY"
