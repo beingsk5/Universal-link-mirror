@@ -1,1 +1,1 @@
-https://build.bitgapps.io/tres2b/BiTGApps-arm64-16.0.0-v5.6-NEON-103401.zip
+https://build.bitgapps.io/tres2b/BiTGApps-arm64-16.0.0-v5.6-NEON-104601.zip
