@@ -1,1 +1,1 @@
-https://build.bitgapps.io/tres2b/BiTGApps-arm64-16.0.0-v5.7-NEON-111801.zip
+https://sourceforge.net/projects/crdroid/files/guacamole/12.x/crDroidAndroid-16.0-20260204-guacamole-v12.7.zip/download#
