@@ -6,7 +6,6 @@ on:
       links:
         description: "Paste download links (one per line)"
         required: true
-        type: string
 
 permissions:
   contents: write
@@ -24,9 +23,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y aria2 unzip p7zip-full bc curl iputils-ping
 
-      # --------------------------------
-      # Save workflow input to file
-      # --------------------------------
       - name: Save input links
         run: |
           printf "%s\n" "${{ github.event.inputs.links }}" > links.txt
@@ -34,9 +30,6 @@ jobs:
           echo "Links:"
           cat links.txt
 
-      # --------------------------------
-      # Detect SourceForge links
-      # --------------------------------
       - name: Detect SourceForge links
         id: detect
         run: |
@@ -46,9 +39,6 @@ jobs:
             echo "IS_SF=false" >> $GITHUB_OUTPUT
           fi
 
-      # --------------------------------
-      # Tag from first file name
-      # --------------------------------
       - name: Generate tag from file name
         id: autotag
         run: |
@@ -65,9 +55,6 @@ jobs:
           echo "TAG=$TAG" >> $GITHUB_OUTPUT
           echo "Auto tag: $TAG"
 
-      # --------------------------------
-      # Load links as output
-      # --------------------------------
       - name: Load links
         id: links
         run: |
@@ -75,9 +62,6 @@ jobs:
           cat links.txt >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
-      # --------------------------------
-      # SourceForge mirror test
-      # --------------------------------
       - name: Determine Fastest SourceForge Mirror
         id: fastest
         if: steps.detect.outputs.IS_SF == 'true'
@@ -123,9 +107,6 @@ jobs:
           echo "Fastest Mirror: $BEST ($BEST_PING ms)" | tee -a mirror_report.txt
           echo "FAST=$BEST" >> $GITHUB_OUTPUT
 
-      # --------------------------------
-      # Download – all rounder
-      # --------------------------------
       - name: Download files (auto detect SourceForge or not)
         run: |
           mkdir -p downloads
@@ -204,17 +185,11 @@ jobs:
 
           done <<< "${{ steps.links.outputs.LIST }}"
 
-      # --------------------------------
-      # SHA256
-      # --------------------------------
       - name: Generate SHA256SUMS
         run: |
           cd downloads
           sha256sum * > SHA256SUMS.txt
 
-      # --------------------------------
-      # Prepare release files
-      # --------------------------------
       - name: Prepare Release Files
         run: |
           mkdir -p release_files
@@ -224,9 +199,6 @@ jobs:
             cp mirror_report.txt release_files/
           fi
 
-      # --------------------------------
-      # Release
-      # --------------------------------
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -239,171 +211,7 @@ jobs:
             - Auto detects SourceForge links
             - Uses fastest mirror only for SourceForge
             - Direct download for non-SourceForge links
-            - Timestamp: ${{ github.run_id }}
+            - Run ID: ${{ github.run_id }}
           files: release_files/*
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}    - name: Generate tag from file name
-      id: autotag
-      run: |
-        FIRST_URL=$(grep -v '^[[:space:]]*$' links.txt | head -n 1)
-        FILE=$(basename "$FIRST_URL" | sed 's/\?.*//')
-
-        TAG=$(echo "$FILE" | sed 's/[^a-zA-Z0-9._-]/-/g')
-
-        if [ -z "$TAG" ]; then
-          TAG="release"
-        fi
-
-        echo "TAG=$TAG" >> $GITHUB_OUTPUT
-        echo "Auto tag: $TAG"
-
-    - name: Load links
-      id: links
-      run: |
-        echo "LIST<<EOF" >> $GITHUB_OUTPUT
-        cat links.txt >> $GITHUB_OUTPUT
-        echo "EOF" >> $GITHUB_OUTPUT
-
-    # -------------------------------
-    # SourceForge mirror test
-    # -------------------------------
-    - name: Determine Fastest SourceForge Mirror
-      id: fastest
-      if: steps.detect.outputs.IS_SF == 'true'
-      run: |
-        echo "Testing SourceForge mirrors..."
-
-        MIRRORS=("netix.dl.sourceforge.net" "gigenet.dl.sourceforge.net")
-        BEST=""
-        BEST_PING=999999
-
-        echo "Mirror Speed Test Report" > mirror_report.txt
-        echo "Timestamp: $(date)" >> mirror_report.txt
-        echo "" >> mirror_report.txt
-
-        for M in "${MIRRORS[@]}"; do
-          echo "Testing: $M" | tee -a mirror_report.txt
-
-          PING=$(ping -c 3 $M 2>/dev/null | tail -1 | awk '{print $4}' | cut -d '/' -f 2)
-
-          echo "Ping: $PING ms" | tee -a mirror_report.txt
-
-          if [ -n "$PING" ]; then
-            if (( $(echo "$PING < $BEST_PING" | bc -l) )); then
-              BEST="$M"
-              BEST_PING="$PING"
-            fi
-          fi
-
-          echo "" >> mirror_report.txt
-        done
-
-        echo "Fastest Mirror: $BEST ($BEST_PING ms)" | tee -a mirror_report.txt
-        echo "FAST=$BEST" >> $GITHUB_OUTPUT
-
-    # -------------------------------
-    # Download – all rounder
-    # -------------------------------
-    - name: Download files (auto detect SourceForge or not)
-      run: |
-        mkdir -p downloads
-        cd downloads
-
-        IS_SF="${{ steps.detect.outputs.IS_SF }}"
-        FAST="${{ steps.fastest.outputs.FAST }}"
-
-        if [ "$IS_SF" = "true" ] && [ -z "$FAST" ]; then
-          FAST="downloads.sourceforge.net"
-        fi
-
-        echo "SourceForge mode: $IS_SF"
-        echo "Selected mirror: $FAST"
-
-        while read -r url; do
-          [ -z "$url" ] && continue
-
-          FILE=$(basename "$url" | sed 's/\?.*//')
-          echo "Processing: $FILE"
-
-          FINAL_URL="$url"
-
-          # rewrite only if this link is sourceforge
-          if echo "$url" | grep -qi "sourceforge.net"; then
-
-            # case 1: https://sourceforge.net/projects/....
-            FINAL_URL=$(echo "$url" | sed -E "s#https?://sourceforge\.net/projects/#https://$FAST/project/#")
-
-            # case 2: https://<mirror>.dl.sourceforge.net/project/....
-            FINAL_URL=$(echo "$FINAL_URL" | sed -E "s#https?://[^/]+\.dl\.sourceforge\.net/project/#https://$FAST/project/#")
-
-          fi
-
-          echo "Final URL: $FINAL_URL"
-
-          for TRY in {1..5}; do
-            echo "Attempt $TRY"
-
-            rm -f "$FILE"
-
-            aria2c -x 16 -s 16 -m 5 \
-              --max-tries=5 \
-              --allow-overwrite=true \
-              "$FINAL_URL" -o "$FILE" && OK=1 || OK=0
-
-            if [ "$OK" = "0" ]; then
-              continue
-            fi
-
-            if [ ! -s "$FILE" ]; then
-              rm -f "$FILE"
-              continue
-            fi
-
-            case "$FILE" in
-              *.zip|*.apk)
-                unzip -t "$FILE" >/dev/null 2>&1 || { rm -f "$FILE"; continue; }
-                ;;
-              *.7z)
-                7z t "$FILE" >/dev/null 2>&1 || { rm -f "$FILE"; continue; }
-                ;;
-            esac
-
-            echo "✔ Valid: $FILE"
-            break
-          done
-
-          if [ ! -s "$FILE" ]; then
-            echo "❌ FAILED: $FILE"
-            exit 1
-          fi
-
-        done <<< "${{ steps.links.outputs.LIST }}"
-
-    - name: Generate SHA256SUMS
-      run: |
-        cd downloads
-        sha256sum * > SHA256SUMS.txt
-
-    - name: Prepare Release Files
-      run: |
-        mkdir release_files
-        cp downloads/* release_files/ 2>/dev/null || true
-
-        if [ -f mirror_report.txt ]; then
-          cp mirror_report.txt release_files/
-        fi
-
-    - name: Upload to GitHub Release
-      uses: softprops/action-gh-release@v2
-      with:
-        tag_name: ${{ steps.autotag.outputs.TAG }}
-        name: ${{ steps.autotag.outputs.TAG }}
-        body: |
-          **Automatic All-Rounder Downloader**
-          - Auto detects SourceForge links
-          - Uses fastest mirror only for SourceForge
-          - Direct download for non-SourceForge links
-          - Timestamp: $(date)
-        files: release_files/*
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
