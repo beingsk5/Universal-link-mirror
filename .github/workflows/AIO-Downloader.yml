@@ -21,23 +21,12 @@ jobs:
       - name: Install Tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y aria2 unzip p7zip-full bc curl jq
+          sudo apt-get install -y aria2 unzip p7zip-full bc curl
 
       - name: Save input links
         run: |
           printf "%s\n" "${{ github.event.inputs.links }}" > links.txt
           sed -i '/^[[:space:]]*$/d' links.txt
-          echo "Links:"
-          cat links.txt
-
-      - name: Detect SourceForge links
-        id: detect
-        run: |
-          if grep -qi "sourceforge.net" links.txt; then
-            echo "IS_SF=true" >> $GITHUB_OUTPUT
-          else
-            echo "IS_SF=false" >> $GITHUB_OUTPUT
-          fi
 
       - name: Generate tag
         id: autotag
@@ -49,75 +38,73 @@ jobs:
           echo "TAG=$TAG" >> $GITHUB_OUTPUT
 
       ############################################################
-      #  DYNAMIC SOURCEFORGE MIRROR FETCH + SPEED RANKING
+      # PARALLEL MIRROR SPEED TEST
       ############################################################
 
-      - name: Fetch & Rank SourceForge Mirrors
-        id: mirrors
-        if: steps.detect.outputs.IS_SF == 'true'
+      - name: Parallel Mirror Speed Test
         run: |
           FIRST_URL=$(head -n 1 links.txt)
 
-          # Extract project from /project/PROJECT/
-          PROJECT=$(echo "$FIRST_URL" | sed -E 's#.*\/project\/([^/]+)\/.*#\1#')
-          FILE=$(basename "$FIRST_URL" | sed 's/\?.*//')
-
-          echo "Detected Project: $PROJECT"
-          echo "Detected File: $FILE"
-
-          API_URL="https://sourceforge.net/settings/mirror_choices?projectname=$PROJECT&filename=$FILE&format=json"
-
-          echo "Fetching mirror list..."
-          curl -L -s "$API_URL" -o mirrors.json
-
-          if ! jq empty mirrors.json >/dev/null 2>&1; then
-            echo "❌ Failed to fetch valid mirror JSON"
-            cat mirrors.json
-            exit 1
+          if ! echo "$FIRST_URL" | grep -qi "sourceforge.net"; then
+            echo "Not a SourceForge link. Skipping mirror test."
+            exit 0
           fi
-
-          jq -r '.mirrors[].url' mirrors.json > mirror_list.txt
-
-          if [ ! -s mirror_list.txt ]; then
-            echo "❌ No mirrors returned"
-            exit 1
-          fi
-
-          echo "Testing mirror speeds..."
 
           PATH_PART=$(echo "$FIRST_URL" | sed -E 's#https?://[^/]+/(project/.*)#\1#')
 
-          echo "Mirror Speed Test Report" > mirror_report.txt
-          echo "Timestamp: $(date)" >> mirror_report.txt
-          echo "" >> mirror_report.txt
+          # ===== PROVIDER LIST FROM YOUR SCREENSHOT =====
+          PROVIDERS=(
+            AltusHost
+            Cfhcable
+            Cytranet
+            DEAC
+            Delska
+            ExcellMedia
+            FlyLifeEcuador
+            Gigenet
+            IXAustralia
+            NetActuate
+            NetIX
+            OnboardCloud
+            PhoenixNAP
+            Pilotfiber
+            Psychz
+            SinalBR
+            SiTSA
+            TWDS
+            UNLIMITED.RS
+            WebWerks
+            YeR
+            zenlayer
+          )
+
+          echo "Testing mirrors in parallel..."
 
           > ranked_mirrors.txt
+          > mirror_report.txt
 
-          while read -r MIRROR_URL; do
-            HOST=$(echo "$MIRROR_URL" | sed -E 's#https?://([^/]+)/.*#\1#')
-            TEST_URL="https://$HOST/$PATH_PART"
+          for P in "${PROVIDERS[@]}"; do
+            (
+              HOST=$(echo "$P" | tr '[:upper:]' '[:lower:]' | tr -d ' ')
+              HOST="${HOST}.dl.sourceforge.net"
 
-            echo "Testing $HOST..." | tee -a mirror_report.txt
+              URL="https://$HOST/$PATH_PART"
 
-            SPEED=$(curl -L --max-time 20 -o /dev/null -s -w "%{speed_download}" "$TEST_URL" || echo 0)
+              SPEED=$(curl -L --max-time 15 -o /dev/null -s -w "%{speed_download}" "$URL" || echo 0)
 
-            if [[ ! "$SPEED" =~ ^[0-9]+$ ]]; then
-              SPEED=0
-            fi
+              if [[ ! "$SPEED" =~ ^[0-9]+$ ]]; then
+                SPEED=0
+              fi
 
-            SPEED_MB=$(echo "$SPEED / 1024 / 1024" | bc -l)
-            SPEED_MB=$(printf "%.2f" "$SPEED_MB")
+              SPEED_MB=$(echo "$SPEED / 1024 / 1024" | bc -l)
+              SPEED_MB=$(printf "%.2f" "$SPEED_MB")
 
-            if [ "$SPEED" -eq 0 ]; then
-              echo "Unreachable ❌" | tee -a mirror_report.txt
-            else
-              echo "Speed: $SPEED_MB MB/s" | tee -a mirror_report.txt
-            fi
+              echo "$SPEED $HOST" >> ranked_mirrors.txt
+              echo "$HOST -> $SPEED_MB MB/s" >> mirror_report.txt
+            ) &
+          done
 
-            echo "$SPEED $HOST" >> ranked_mirrors.txt
-            echo "" >> mirror_report.txt
-
-          done < mirror_list.txt
+          wait
 
           sort -nr ranked_mirrors.txt -o ranked_mirrors.txt
 
@@ -125,7 +112,7 @@ jobs:
           cat ranked_mirrors.txt
 
       ############################################################
-      #  DOWNLOAD WITH AUTO FALLBACK
+      # DOWNLOAD WITH AUTO FALLBACK
       ############################################################
 
       - name: Download Files
@@ -137,8 +124,6 @@ jobs:
             [ -z "$url" ] && continue
 
             FILE=$(basename "$url" | sed 's/\?.*//')
-            echo "Processing: $FILE"
-
             SUCCESS=0
 
             if echo "$url" | grep -qi "sourceforge.net"; then
@@ -149,10 +134,12 @@ jobs:
                 HOST=$(echo "$line" | awk '{print $2}')
                 FINAL_URL="https://$HOST/$PATH_PART"
 
-                echo "Trying mirror: $HOST"
+                echo "Trying $HOST"
 
-                aria2c -x16 -s16 -k1M --file-allocation=trunc \
-                  --allow-overwrite=true "$FINAL_URL" -o "$FILE"
+                aria2c -x16 -s16 -k1M \
+                  --file-allocation=trunc \
+                  --allow-overwrite=true \
+                  "$FINAL_URL" -o "$FILE"
 
                 if [ -s "$FILE" ]; then
                   SUCCESS=1
@@ -165,20 +152,20 @@ jobs:
               done < ../ranked_mirrors.txt
 
             else
-              aria2c -x16 -s16 -k1M --file-allocation=trunc \
-                --allow-overwrite=true "$url" -o "$FILE"
+              aria2c -x16 -s16 -k1M \
+                --file-allocation=trunc \
+                --allow-overwrite=true \
+                "$url" -o "$FILE"
 
               [ -s "$FILE" ] && SUCCESS=1
             fi
 
             if [ "$SUCCESS" = "0" ]; then
-              echo "❌ Download failed: $FILE"
+              echo "Download failed: $FILE"
               exit 1
             fi
 
           done < ../links.txt
-
-      ############################################################
 
       - name: Generate SHA256SUMS
         run: |
@@ -197,12 +184,11 @@ jobs:
           tag_name: ${{ steps.autotag.outputs.TAG }}
           name: ${{ steps.autotag.outputs.TAG }}
           body: |
-            **Dynamic SourceForge Mirror Engine**
-            - Mirrors fetched live from SF API
-            - Real speed test ranking
-            - Auto fallback if fastest fails
+            Parallel Mirror Optimized Download
+            - All mirrors tested simultaneously
+            - Auto fastest selection
+            - Auto fallback
             - SHA256SUMS included
-            - Run ID: ${{ github.run_id }}
           files: release_files/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
