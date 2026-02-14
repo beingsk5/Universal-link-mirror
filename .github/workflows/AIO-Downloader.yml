@@ -48,39 +48,50 @@ jobs:
           [ -z "$TAG" ] && TAG="release-$(date +%Y%m%d-%H%M%S)"
           echo "TAG=$TAG" >> $GITHUB_OUTPUT
 
-      - name: Fetch All SourceForge Mirrors Dynamically
+      ############################################################
+      #  DYNAMIC SOURCEFORGE MIRROR FETCH + SPEED RANKING
+      ############################################################
+
+      - name: Fetch & Rank SourceForge Mirrors
         id: mirrors
         if: steps.detect.outputs.IS_SF == 'true'
         run: |
           FIRST_URL=$(head -n 1 links.txt)
 
-          PROJECT=$(echo "$FIRST_URL" | sed -E 's#.*sourceforge\.net/projects/([^/]+)/.*#\1#')
+          # Extract project from /project/PROJECT/
+          PROJECT=$(echo "$FIRST_URL" | sed -E 's#.*\/project\/([^/]+)\/.*#\1#')
           FILE=$(basename "$FIRST_URL" | sed 's/\?.*//')
 
-          echo "Project: $PROJECT"
-          echo "File: $FILE"
+          echo "Detected Project: $PROJECT"
+          echo "Detected File: $FILE"
 
           API_URL="https://sourceforge.net/settings/mirror_choices?projectname=$PROJECT&filename=$FILE&format=json"
 
-          curl -s "$API_URL" > mirrors.json
+          echo "Fetching mirror list..."
+          curl -L -s "$API_URL" -o mirrors.json
+
+          if ! jq empty mirrors.json >/dev/null 2>&1; then
+            echo "❌ Failed to fetch valid mirror JSON"
+            cat mirrors.json
+            exit 1
+          fi
 
           jq -r '.mirrors[].url' mirrors.json > mirror_list.txt
 
-          echo "Fetched Mirrors:"
-          cat mirror_list.txt
+          if [ ! -s mirror_list.txt ]; then
+            echo "❌ No mirrors returned"
+            exit 1
+          fi
 
-      - name: Test Mirrors & Sort By Speed
-        id: fastest
-        if: steps.detect.outputs.IS_SF == 'true'
-        run: |
-          FIRST_URL=$(head -n 1 links.txt)
+          echo "Testing mirror speeds..."
+
           PATH_PART=$(echo "$FIRST_URL" | sed -E 's#https?://[^/]+/(project/.*)#\1#')
 
           echo "Mirror Speed Test Report" > mirror_report.txt
           echo "Timestamp: $(date)" >> mirror_report.txt
           echo "" >> mirror_report.txt
 
-          > sorted_mirrors.txt
+          > ranked_mirrors.txt
 
           while read -r MIRROR_URL; do
             HOST=$(echo "$MIRROR_URL" | sed -E 's#https?://([^/]+)/.*#\1#')
@@ -103,22 +114,24 @@ jobs:
               echo "Speed: $SPEED_MB MB/s" | tee -a mirror_report.txt
             fi
 
-            echo "$SPEED $HOST" >> sorted_mirrors.txt
+            echo "$SPEED $HOST" >> ranked_mirrors.txt
             echo "" >> mirror_report.txt
 
           done < mirror_list.txt
 
-          sort -nr sorted_mirrors.txt > ranked_mirrors.txt
+          sort -nr ranked_mirrors.txt -o ranked_mirrors.txt
 
-          echo "Ranked Mirrors:"
+          echo "Mirror ranking:"
           cat ranked_mirrors.txt
 
-      - name: Download Files (Auto Fastest + Auto Fallback)
+      ############################################################
+      #  DOWNLOAD WITH AUTO FALLBACK
+      ############################################################
+
+      - name: Download Files
         run: |
           mkdir -p downloads
           cd downloads
-
-          IS_SF="${{ steps.detect.outputs.IS_SF }}"
 
           while read -r url; do
             [ -z "$url" ] && continue
@@ -143,7 +156,7 @@ jobs:
 
                 if [ -s "$FILE" ]; then
                   SUCCESS=1
-                  echo "Downloaded successfully from $HOST"
+                  echo "Downloaded from $HOST"
                   break
                 else
                   rm -f "$FILE"
@@ -159,11 +172,13 @@ jobs:
             fi
 
             if [ "$SUCCESS" = "0" ]; then
-              echo "❌ Download failed for $FILE"
+              echo "❌ Download failed: $FILE"
               exit 1
             fi
 
           done < ../links.txt
+
+      ############################################################
 
       - name: Generate SHA256SUMS
         run: |
