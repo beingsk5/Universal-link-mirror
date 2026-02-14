@@ -21,7 +21,7 @@ jobs:
       - name: Install Tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y aria2 unzip p7zip-full bc curl iputils-ping
+          sudo apt-get install -y aria2 unzip p7zip-full bc curl
 
       - name: Save input links
         run: |
@@ -39,53 +39,52 @@ jobs:
             echo "IS_SF=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Generate tag from file name
+      - name: Generate tag
         id: autotag
         run: |
           FIRST_URL=$(head -n 1 links.txt)
           FILE=$(basename "$FIRST_URL" | sed 's/\?.*//')
           TAG=$(echo "$FILE" | sed 's/[^a-zA-Z0-9._-]/-/g')
-
-          if [ -z "$TAG" ]; then
-            TAG="release-$(date +%Y%m%d-%H%M%S)"
-          fi
-
+          [ -z "$TAG" ] && TAG="release-$(date +%Y%m%d-%H%M%S)"
           echo "TAG=$TAG" >> $GITHUB_OUTPUT
-          echo "Auto tag: $TAG"
 
-      - name: Determine Fastest SourceForge Mirror
+      - name: Determine Fastest SourceForge Mirror (Real Speed Test)
         id: fastest
         if: steps.detect.outputs.IS_SF == 'true'
         run: |
-          echo "Testing SourceForge mirrors..."
+          echo "Testing mirrors using real download speed..."
 
           MIRRORS=(
             "netix.dl.sourceforge.net"
             "gigenet.dl.sourceforge.net"
             "pilotfiber.dl.sourceforge.net"
             "versaweb.dl.sourceforge.net"
+            "webwerks.dl.sourceforge.net"
           )
 
+          TEST_PATH=$(head -n 1 links.txt | sed -E 's#https?://[^/]+/(project/.*)#\1#')
+
           BEST=""
-          BEST_PING=999999
+          BEST_SPEED=0
 
           echo "Mirror Speed Test Report" > mirror_report.txt
           echo "Timestamp: $(date)" >> mirror_report.txt
           echo "" >> mirror_report.txt
 
           for M in "${MIRRORS[@]}"; do
-            echo "Testing: $M" | tee -a mirror_report.txt
+            URL="https://$M/$TEST_PATH"
+            echo "Testing $M..." | tee -a mirror_report.txt
 
-            PING=$(ping -c 3 -W 2 "$M" 2>/dev/null \
-              | tail -1 | awk -F'/' '{print $5}')
+            SPEED=$(curl -L -o /dev/null -s -w "%{speed_download}" "$URL")
 
-            echo "Ping: ${PING:-N/A} ms" | tee -a mirror_report.txt
+            SPEED_MB=$(echo "$SPEED / 1024 / 1024" | bc -l)
+            SPEED_MB=$(printf "%.2f" "$SPEED_MB")
 
-            if [[ "$PING" =~ ^[0-9.]+$ ]]; then
-              if (( $(echo "$PING < $BEST_PING" | bc -l) )); then
-                BEST="$M"
-                BEST_PING="$PING"
-              fi
+            echo "Speed: $SPEED_MB MB/s" | tee -a mirror_report.txt
+
+            if (( $(echo "$SPEED > $BEST_SPEED" | bc -l) )); then
+              BEST="$M"
+              BEST_SPEED="$SPEED"
             fi
 
             echo "" >> mirror_report.txt
@@ -95,23 +94,16 @@ jobs:
             BEST="downloads.sourceforge.net"
           fi
 
-          echo "Fastest Mirror: $BEST ($BEST_PING ms)" | tee -a mirror_report.txt
+          echo "Fastest Mirror Selected: $BEST" | tee -a mirror_report.txt
           echo "FAST=$BEST" >> $GITHUB_OUTPUT
 
-      - name: Download files
+      - name: Download files (Mirror Forced + Fallback)
         run: |
           mkdir -p downloads
           cd downloads
 
           IS_SF="${{ steps.detect.outputs.IS_SF }}"
           FAST="${{ steps.fastest.outputs.FAST }}"
-
-          if [ "$IS_SF" = "true" ] && [ -z "$FAST" ]; then
-            FAST="downloads.sourceforge.net"
-          fi
-
-          echo "SourceForge mode: $IS_SF"
-          echo "Selected mirror: $FAST"
 
           while read -r url; do
             [ -z "$url" ] && continue
@@ -122,34 +114,29 @@ jobs:
             FINAL_URL="$url"
 
             if echo "$url" | grep -qi "sourceforge.net"; then
-              FINAL_URL=$(echo "$url" \
-                | sed -E "s#https?://sourceforge\.net/projects/#https://$FAST/project/#")
+              PATH_PART=$(echo "$url" | sed -E 's#https?://[^/]+/(project/.*)#\1#')
+              FINAL_URL="https://$FAST/$PATH_PART"
             fi
 
-            echo "Final URL: $FINAL_URL"
+            echo "Downloading from: $FINAL_URL"
 
-            OK=0
+            SUCCESS=0
 
-            for TRY in {1..5}; do
-              echo "Attempt $TRY"
-
+            for TRY in {1..3}; do
+              echo "Attempt $TRY..."
               rm -f "$FILE"
 
-              aria2c \
-                -x 16 -s 16 -m 5 \
-                --summary-interval=0 \
-                --file-allocation=trunc \
-                --allow-overwrite=true \
-                "$FINAL_URL" -o "$FILE" && OK=1 || OK=0
+              aria2c -x16 -s16 -k1M --file-allocation=trunc \
+                --allow-overwrite=true "$FINAL_URL" -o "$FILE"
 
-              if [ "$OK" = "1" ] && [ -s "$FILE" ]; then
-                echo "✔ Valid: $FILE"
+              if [ -s "$FILE" ]; then
+                SUCCESS=1
                 break
               fi
             done
 
-            if [ ! -s "$FILE" ]; then
-              echo "❌ FAILED: $FILE"
+            if [ "$SUCCESS" = "0" ]; then
+              echo "❌ Download failed for $FILE"
               exit 1
             fi
 
@@ -173,9 +160,9 @@ jobs:
           name: ${{ steps.autotag.outputs.TAG }}
           body: |
             **Automatic All-Rounder Downloader**
-            - Auto detects SourceForge links
-            - Uses fastest mirror only for SourceForge
-            - Direct download for other links
+            - Fastest SourceForge mirror selected via real speed test
+            - Mirror forced for all SourceForge links
+            - SHA256SUMS included
             - Run ID: ${{ github.run_id }}
           files: release_files/*
         env:
