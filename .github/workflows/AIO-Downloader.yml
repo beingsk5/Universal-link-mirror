@@ -38,7 +38,7 @@ jobs:
           echo "TAG=$TAG" >> $GITHUB_OUTPUT
 
       ############################################################
-      # PARALLEL MIRROR SPEED TEST
+      # PARALLEL MIRROR SPEED TEST (SF ONLY)
       ############################################################
 
       - name: Parallel Mirror Speed Test
@@ -52,30 +52,11 @@ jobs:
 
           PATH_PART=$(echo "$FIRST_URL" | sed -E 's#https?://[^/]+/(project/.*)#\1#')
 
-          # ===== PROVIDER LIST FROM YOUR SCREENSHOT =====
           PROVIDERS=(
-            AltusHost
-            Cfhcable
-            Cytranet
-            DEAC
-            Delska
-            ExcellMedia
-            FlyLifeEcuador
-            Gigenet
-            IXAustralia
-            NetActuate
-            NetIX
-            OnboardCloud
-            PhoenixNAP
-            Pilotfiber
-            Psychz
-            SinalBR
-            SiTSA
-            TWDS
-            UNLIMITED.RS
-            WebWerks
-            YeR
-            zenlayer
+            AltusHost Cfhcable Cytranet DEAC Delska ExcellMedia
+            FlyLifeEcuador Gigenet IXAustralia NetActuate NetIX
+            OnboardCloud PhoenixNAP Pilotfiber Psychz SinalBR
+            SiTSA TWDS UNLIMITED.RS WebWerks YeR zenlayer
           )
 
           echo "Testing mirrors in parallel..."
@@ -87,14 +68,11 @@ jobs:
             (
               HOST=$(echo "$P" | tr '[:upper:]' '[:lower:]' | tr -d ' ')
               HOST="${HOST}.dl.sourceforge.net"
-
               URL="https://$HOST/$PATH_PART"
 
               SPEED=$(curl -L --max-time 15 -o /dev/null -s -w "%{speed_download}" "$URL" || echo 0)
 
-              if [[ ! "$SPEED" =~ ^[0-9]+$ ]]; then
-                SPEED=0
-              fi
+              [[ "$SPEED" =~ ^[0-9]+$ ]] || SPEED=0
 
               SPEED_MB=$(echo "$SPEED / 1024 / 1024" | bc -l)
               SPEED_MB=$(printf "%.2f" "$SPEED_MB")
@@ -105,11 +83,7 @@ jobs:
           done
 
           wait
-
           sort -nr ranked_mirrors.txt -o ranked_mirrors.txt
-
-          echo "Mirror ranking:"
-          cat ranked_mirrors.txt
 
       ############################################################
       # DOWNLOAD WITH AUTO FALLBACK
@@ -126,7 +100,7 @@ jobs:
             FILE=$(basename "$url" | sed 's/\?.*//')
             SUCCESS=0
 
-            if echo "$url" | grep -qi "sourceforge.net"; then
+            if echo "$url" | grep -qi "sourceforge.net" && [ -f ../ranked_mirrors.txt ]; then
 
               PATH_PART=$(echo "$url" | sed -E 's#https?://[^/]+/(project/.*)#\1#')
 
@@ -176,7 +150,10 @@ jobs:
         run: |
           mkdir -p release_files
           cp downloads/* release_files/ 2>/dev/null || true
-          [ -f mirror_report.txt ] && cp mirror_report.txt release_files/
+
+          if [ -f mirror_report.txt ]; then
+            cp mirror_report.txt release_files/
+          fi
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
@@ -189,6 +166,6 @@ jobs:
             - Auto fastest selection
             - Auto fallback
             - SHA256SUMS included
-          files: release_files/*
+          files: release_files/**
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
